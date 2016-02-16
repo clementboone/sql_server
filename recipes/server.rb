@@ -20,26 +20,6 @@
 
 Chef::Application.fatal!("node['sql_server']['server_sa_password'] must be set for this cookbook to run") if node['sql_server']['server_sa_password'].nil?
 
-service_name = if node['sql_server']['instance_name'] == 'SQLEXPRESS'
-                 "MSSQL$#{node['sql_server']['instance_name']}"
-               else
-                 node['sql_server']['instance_name']
-               end
-
-# Compute registry version based on sql server version
-reg_version = node['sql_server']['reg_version'] ||
-              case node['sql_server']['version']
-              when '2008' then 'MSSQL10.'
-              when '2008R2' then 'MSSQL10_50.'
-              when '2012' then 'MSSQL11.'
-              when '2014' then 'MSSQL12.'
-              when '2016' then 'MSSQL13.'
-              else raise "Unsupported sql_server version '#{node['sql_server']['version']}'"
-              end
-
-static_tcp_reg_key = 'HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Microsoft SQL Server\\' + reg_version +
-                     node['sql_server']['instance_name'] + '\MSSQLServer\SuperSocketNetLib\Tcp\IPAll'
-
 config_file_path = win_friendly_path(File.join(Chef::Config[:file_cache_path], 'ConfigurationFile.ini'))
 
 sql_sys_admin_list = if node['sql_server']['sysadmins'].is_a? Array
@@ -92,16 +72,5 @@ windows_package package_name do
   action :install
 end
 
-# set the static tcp port
-registry_key static_tcp_reg_key do
-  values [{ name: 'TcpPort', type: :string, data: node['sql_server']['port'].to_s },
-          { name: 'TcpDynamicPorts', type: :string, data: '' }]
-  recursive true
-  notifies :restart, "service[#{service_name}]", :immediately
-end
-
-service service_name do
-  action [:start, :enable]
-end
-
+include_recipe 'sql_server::configure'
 include_recipe 'sql_server::client'
